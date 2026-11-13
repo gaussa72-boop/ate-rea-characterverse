@@ -1,13 +1,23 @@
 {
   "name": "ate-rea-characterverse",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "esbuild public/local-ai.js --bundle --format=esm --platform=browser --outfile=public/local-ai.bundle.js",
+    "postinstall": "npm run build",
     "start": "node server.js"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.79",
     "express": "^4.21.2",
-    "openai": "^4.77.0"
+    "helmet": "^8.1.0",
+    "express-rate-limit": "^7.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
