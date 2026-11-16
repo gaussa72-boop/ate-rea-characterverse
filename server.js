@@ -53,7 +53,7 @@ app.post("/api/aite/chat", async (req, res) => {
     return res.status(503).json({ error: "OPENAI_API_KEY fehlt auf dem Server. Bitte in Render unter Environment setzen." });
   }
 
-  const { message, history = [], persona = "compass", site = "AITE" } = req.body || {};
+  const { message, history = [], persona = "compass", site = "AITE", characterId = null } = req.body || {};
   if (typeof message !== "string" || !message.trim() || message.length > 6000) {
     return res.status(400).json({ error: "Bitte eine Nachricht mit maximal 6000 Zeichen senden." });
   }
@@ -70,8 +70,11 @@ app.post("/api/aite/chat", async (req, res) => {
     m && ["user", "assistant"].includes(m.role) && typeof m.content === "string"
   ).map(m => ({ role: m.role, content: m.content.slice(0, 6000) })) : [];
 
+  const character = characterId && characters[characterId] ? characters[characterId] : null;
   const system = [
-    "Du bist AITE, ein deutschsprachiger KI-Begleiter.",
+    character
+      ? "Du verkörperst die fiktionale Figur " + character.name + ". Rolle: " + character.role + ". Sprachstil: " + character.tone + ". Hintergrund: " + character.lore + ". Werte: " + character.values + ". Bleibe über den Gesprächsverlauf charaktertreu und unterscheide Romanfiktion von realen Tatsachen."
+      : "Du bist AITE, ein deutschsprachiger KI-Begleiter.",
     "Antworte hilfreich, präzise, empathisch, transparent und praktisch.",
     "Unterscheide gesicherte Fakten, Vermutungen und kreative Reflexionen. Erfinde keine Quellen oder Fähigkeiten.",
     "Spirituelle und metaphysische Inhalte sind Reflexionsangebote und keine nachgewiesenen Tatsachen.",
