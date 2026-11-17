@@ -4,6 +4,7 @@ async function initOllama(){const r=await fetch("http://127.0.0.1:11434/api/tags
 export async function initLocalAI(onProgress=()=>{}){
  if(localAIState.ready)return localAIState;
  if(navigator.gpu){try{localAIState.engine=await CreateMLCEngine(localAIState.modelId,{initProgressCallback:onProgress});localAIState.provider="webgpu";localAIState.ready=true;return localAIState}catch(e){console.warn("WebGPU unavailable; trying local Ollama",e)}}
+ if(location.hostname!=="localhost"&&location.hostname!=="127.0.0.1")throw new Error("Dieser Browser bietet kein nutzbares WebGPU. Ein Ollama-Dienst auf 127.0.0.1 ist von der gehosteten HTTPS-Website nicht erreichbar. Bitte OPENAI_API_KEY in Render konfigurieren.");
  return initOllama();
 }
 export async function generateLocalReply({character,message,history=[]}){
