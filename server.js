@@ -14,7 +14,7 @@ app.use(helmet({
     styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
     fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
     imgSrc: ["'self'", "data:", "blob:"],
-    connectSrc: ["'self'", "https://huggingface.co", "https://cdn-lfs.huggingface.co", "https://*.hf.co", "http://127.0.0.1:11434"],
+    connectSrc: ["'self'", "https://huggingface.co", "https://cdn-lfs.huggingface.co", "https://*.hf.co", "https://raw.githubusercontent.com", "http://127.0.0.1:11434"],
     workerSrc: ["'self'", "blob:"],
     objectSrc: ["'none'"],
     frameAncestors: ["'none'"],
