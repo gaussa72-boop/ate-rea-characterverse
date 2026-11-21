@@ -6,6 +6,9 @@ import { fileURLToPath } from "url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+// Render terminates TLS/proxy connections before forwarding requests to this app.
+// Trust the single platform proxy so express-rate-limit can identify client IPs safely.
+app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.use(helmet({
   contentSecurityPolicy: { directives: {
