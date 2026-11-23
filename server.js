@@ -24,7 +24,7 @@ app.use(helmet({
     upgradeInsecureRequests: []
   }}
 }));
-app.use(express.json({ limit: "128kb" }));
+app.use(express.json({ limit: "18mb" }));
 app.use("/api/", rateLimit({ windowMs: 60000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false }));
 
 const characters = {
@@ -49,6 +49,87 @@ app.get("/api/config", (_q, r) => r.json({
   model: process.env.OPENAI_MODEL || "gpt-4o-mini"
 }));
 
+// Create a user-defined fictional character from a written brief and optional visual references.
+// Images are analyzed transiently; uploaded files are not written to disk or retained by this service.
+app.post("/api/characters/generate", async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "OPENAI_API_KEY fehlt im Render-Service. Bitte den Schlüssel unter Environment setzen." });
+  const body = req.body || {};
+  const fields = ["name", "role", "idea", "traits", "values", "speechStyle", "goals", "backstory", "boundaries"];
+  for (const key of fields) {
+    if (body[key] !== undefined && typeof body[key] !== "string") return res.status(400).json({ error: "Ungültiges Feld: " + key });
+  }
+  if (!body.name?.trim() || !body.idea?.trim()) return res.status(400).json({ error: "Name und Grundidee sind erforderlich." });
+  if (body.name.length > 70 || body.idea.length > 4000) return res.status(400).json({ error: "Name oder Grundidee überschreiten die erlaubte Länge." });
+  const media = Array.isArray(body.media) ? body.media : [];
+  if (media.length > 6) return res.status(400).json({ error: "Maximal sechs visuelle Referenzbilder sind erlaubt." });
+  let totalBytes = 0;
+  const imageParts = [];
+  for (const item of media) {
+    if (typeof item !== "string" || !/^data:image\/(jpeg|png|webp);base64,/.test(item)) {
+      return res.status(400).json({ error: "Eine visuelle Referenz hat ein ungültiges Bildformat." });
+    }
+    const base64 = item.split(",")[1] || "";
+    totalBytes += Math.floor(base64.length * 0.75);
+    if (base64.length > 5_600_000) return res.status(413).json({ error: "Ein Referenzbild ist zu groß." });
+    imageParts.push({ type: "image_url", image_url: { url: item, detail: "low" } });
+  }
+  if (totalBytes > 13_000_000) return res.status(413).json({ error: "Die Gesamtgröße der Referenzbilder ist zu groß." });
+  const brief = [
+    "Erstelle ein konsistentes, fiktionales KI-Charakterprofil anhand der folgenden Nutzerangaben und visuellen Referenzen.",
+    "Die abgebildeten Personen sind nur visuelle Inspiration. Identifiziere keine reale Person, leite keine sensible Eigenschaft ab und behaupte nicht, dass der Charakter die abgebildete Person ist.",
+    "Gib ausschließlich ein JSON-Objekt mit den Feldern name, role, summary, traits (Array mit 5 bis 10 kurzen Eigenschaften), values (Array), speechStyle, backstory, goals, behavior, appearance (nur sichtbare, nicht-sensitive Gestaltungselemente), greeting und boundaries zurück.",
+    "Erfinde keine biografischen Tatsachen über reale Personen. Verwende die Nutzeridee als kreative Vorgabe. Antworte auf Deutsch.",
+    "Name: " + body.name,
+    "Rolle: " + (body.role || "frei zu gestalten"),
+    "Grundidee: " + body.idea,
+    "Eigenschaften: " + (body.traits || "aus der Idee ableiten"),
+    "Werte: " + (body.values || "aus der Idee ableiten"),
+    "Sprachstil: " + (body.speechStyle || "passend zur Figur"),
+    "Ziele: " + (body.goals || "aus der Idee ableiten"),
+    "Hintergrund: " + (body.backstory || "kreativ ausarbeiten"),
+    "Verhaltensregeln: " + (body.boundaries || "respektvoll, transparent und charaktertreu")
+  ].join("\n");
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.OPENAI_VISION_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Du bist ein professioneller Character Designer für fiktionale Figuren und Rollenspiel-Personas. Gib valides JSON ohne Markdown zurück." },
+          { role: "user", content: [{ type: "text", text: brief }, ...imageParts] }
+        ],
+        temperature: 0.7,
+        max_tokens: 1300,
+        response_format: { type: "json_object" }
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("Character generation API error:", response.status, data?.error?.message || "unknown");
+      return res.status(response.status === 429 ? 429 : 502).json({ error: response.status === 429 ? "KI-Limit erreicht. Bitte später erneut versuchen." : "Die KI konnte den Charakter gerade nicht erstellen." });
+    }
+    const raw = data?.choices?.[0]?.message?.content;
+    if (typeof raw !== "string") return res.status(502).json({ error: "Die KI hat kein Charakterprofil zurückgegeben." });
+    let character;
+    try { character = JSON.parse(raw); } catch { return res.status(502).json({ error: "Das erzeugte Charakterprofil war nicht lesbar. Bitte erneut versuchen." }); }
+    character.name = String(character.name || body.name).slice(0, 70);
+    character.role = String(character.role || body.role || "Eigener Charakter").slice(0, 160);
+    for (const key of ["summary", "speechStyle", "backstory", "goals", "behavior", "appearance", "greeting", "boundaries"]) {
+      character[key] = String(character[key] || "").slice(0, 2400);
+    }
+    character.traits = Array.isArray(character.traits) ? character.traits.slice(0, 12).map(x => String(x).slice(0, 80)) : [];
+    character.values = Array.isArray(character.values) ? character.values.slice(0, 12).map(x => String(x).slice(0, 80)) : [];
+    character.userGenerated = true;
+    return res.json({ character, model: data.model || process.env.OPENAI_MODEL || "gpt-4o-mini", analyzedReferences: imageParts.length });
+  } catch (error) {
+    console.error("Character generation failed:", error?.name || "Error");
+    return res.status(502).json({ error: "Verbindung zur KI fehlgeschlagen. Bitte später erneut versuchen." });
+  }
+});
+
 // OpenAI calls stay on the server. The API key is never sent to the browser.
 app.post("/api/aite/chat", async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -56,7 +137,7 @@ app.post("/api/aite/chat", async (req, res) => {
     return res.status(503).json({ error: "OPENAI_API_KEY fehlt auf dem Server. Bitte in Render unter Environment setzen." });
   }
 
-  const { message, history = [], persona = "compass", site = "AITE", characterId = null } = req.body || {};
+  const { message, history = [], persona = "compass", site = "AITE", characterId = null, customCharacter = null } = req.body || {};
   if (typeof message !== "string" || !message.trim() || message.length > 6000) {
     return res.status(400).json({ error: "Bitte eine Nachricht mit maximal 6000 Zeichen senden." });
   }
@@ -73,7 +154,17 @@ app.post("/api/aite/chat", async (req, res) => {
     m && ["user", "assistant"].includes(m.role) && typeof m.content === "string"
   ).map(m => ({ role: m.role, content: m.content.slice(0, 6000) })) : [];
 
-  const character = characterId && characters[characterId] ? characters[characterId] : null;
+  const character = characterId && characters[characterId] ? characters[characterId] : (
+    customCharacter && typeof customCharacter === "object" && customCharacter.userGenerated === true
+      ? {
+          name: String(customCharacter.name || "Eigener Charakter").slice(0, 70),
+          role: String(customCharacter.role || "Fiktionale Figur").slice(0, 160),
+          tone: String(customCharacter.speechStyle || "charaktertreu und natürlich").slice(0, 500),
+          lore: String(customCharacter.backstory || customCharacter.summary || "").slice(0, 2400),
+          values: [ ...(Array.isArray(customCharacter.values) ? customCharacter.values : []), ...(Array.isArray(customCharacter.traits) ? customCharacter.traits : []) ].map(x => String(x).slice(0, 100)).join(", ").slice(0, 1200)
+        }
+      : null
+  );
   const system = [
     character
       ? "Du verkörperst die fiktionale Figur " + character.name + ". Rolle: " + character.role + ". Sprachstil: " + character.tone + ". Hintergrund: " + character.lore + ". Werte: " + character.values + ". Bleibe über den Gesprächsverlauf charaktertreu und unterscheide Romanfiktion von realen Tatsachen."
