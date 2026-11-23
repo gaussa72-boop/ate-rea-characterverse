@@ -1,16 +1,17 @@
 import {initLocalAI,generateLocalReply,localAIState} from "./local-ai.bundle.js";
-let selected="ate_rea",history=[],characterList=[],openAIAvailable=false;
+let selected="ate_rea",history=[],characterList=[],openAIAvailable=false,selectedCustom=null;
 const cards=document.querySelector("#cards"),messages=document.querySelector("#messages"),provider=document.querySelector("#ai-provider"),providerStatus=document.querySelector("#provider-status"),esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function load(){
  try{const r=await fetch("/api/characters");if(!r.ok)throw Error("Charaktere konnten nicht geladen werden");characterList=await r.json();}catch(e){document.querySelector("#ai-status").textContent="● SERVERFEHLER";providerStatus.textContent=e.message;return}
- cards.innerHTML=characterList.map(c=>'<article class="character '+(c.id===selected?'active':'')+'" data-id="'+c.id+'"><div class="avatar">✧</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role)+' · '+esc(c.tone)+'</p><button>Mit dieser Figur sprechen ↗</button></article>').join("");
- cards.querySelectorAll(".character").forEach(el=>el.onclick=()=>choose(characterList.find(c=>c.id===el.dataset.id)));
+ const customCharacters=JSON.parse(localStorage.getItem("ate-rea-custom-characters")||"[]").filter(c=>c&&c.userGenerated===true&&typeof c.id==="string");
+ cards.innerHTML=characterList.map(c=>'<article class="character '+(c.id===selected?'active':'')+'" data-id="'+c.id+'"><div class="avatar">✧</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role)+' · '+esc(c.tone)+'</p><button>Mit dieser Figur sprechen ↗</button></article>').join("")+customCharacters.map(c=>'<article class="character custom-character" data-id="'+esc(c.id)+'"><div class="avatar">✦</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role||"Eigener Charakter")+' · Eigene KI-Figur</p><button>Eigene Figur verwenden ↗</button></article>').join("");
+ cards.querySelectorAll(".character").forEach(el=>el.onclick=()=>choose(characterList.find(c=>c.id===el.dataset.id)||customCharacters.find(c=>c.id===el.dataset.id)));
  choose(characterList.find(c=>c.id===selected)||characterList[0],false);
  try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;provider.value=openAIAvailable?"openai":"offline";providerStatus.textContent=openAIAvailable?"OpenAI-Server konfiguriert":"Kein OPENAI_API_KEY am Server. Offline-Reflexion verfügbar; für generative KI den Schlüssel in Render hinterlegen.";document.querySelector("#ai-status").textContent=openAIAvailable?"● ONLINE-KI VERFÜGBAR":"● OFFLINE-REFLEXION · API-KEY FEHLT";document.querySelector("#model-status").textContent=openAIAvailable?"Serverseitige KI ist bereit.":"Die lokale Modellverbindung ist auf dieser Render-Seite nicht automatisch verfügbar. Offline-Reflexion funktioniert; für echte generative Antworten OPENAI_API_KEY im Render-Service ate-rea-characterverse setzen.";
  }catch{provider.value="local";providerStatus.textContent="Serverstatus nicht verfügbar";}
 }
 function choose(c,reset=true){
- if(!c)return;selected=c.id;document.querySelector("#chat-name").textContent=c.name;document.querySelector("#chat-role").textContent=c.role;document.querySelector("#selected-label").textContent=c.name.toUpperCase();
+ if(!c)return;selected=c.id;selectedCustom=c.userGenerated===true?c:null;document.querySelector("#chat-name").textContent=c.name;document.querySelector("#chat-role").textContent=c.role;document.querySelector("#selected-label").textContent=c.name.toUpperCase();
  if(reset){history=[];messages.innerHTML='<div class="bubble assistant">'+esc(c.name)+' erwartet deine Nachricht.</div>'}
  cards.querySelectorAll(".character").forEach(el=>el.classList.toggle("active",el.dataset.id===selected));
 }
@@ -26,13 +27,13 @@ document.querySelector("#chat-form").onsubmit=async e=>{
  e.preventDefault();const input=document.querySelector("#message"),message=input.value.trim();if(!message)return;input.value="";
  messages.insertAdjacentHTML("beforeend",'<div class="bubble user">'+esc(message)+'</div>');
  const wait=document.createElement("div");wait.className="bubble assistant";wait.textContent="Die Figur denkt nach …";messages.append(wait);
- const c=characterList.find(x=>x.id===selected);
+ const c=selectedCustom||characterList.find(x=>x.id===selected);
  try{
   let reply;
   if(provider.value==="openai"){
    if(!openAIAvailable)throw Error("OpenAI ist auf diesem Render-Dienst nicht konfiguriert. OPENAI_API_KEY in Render setzen.");
    providerStatus.textContent="OpenAI verarbeitet deine Anfrage …";
-   const r=await fetch("/api/aite/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,history:history.slice(-14),characterId:selected,site:"ATE REA CharacterVerse"})});
+   const r=await fetch("/api/aite/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,history:history.slice(-14),characterId:selectedCustom?null:selected,customCharacter:selectedCustom,site:"ATE REA CharacterVerse"})});
    const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"OpenAI-Anfrage fehlgeschlagen ("+r.status+")");reply=data.reply;providerStatus.textContent="OpenAI online · "+(data.model||"Modell aktiv");
   }else if(provider.value==="local"){
    if(!localAIState.ready)throw Error("Bitte zuerst die lokale KI laden. Wenn das auf diesem Mac nicht unterstützt wird, OpenAI online auswählen.");
