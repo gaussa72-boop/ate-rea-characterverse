@@ -160,8 +160,8 @@ app.post("/api/aite/chat", async (req, res) => {
           name: String(customCharacter.name || "Eigener Charakter").slice(0, 70),
           role: String(customCharacter.role || "Fiktionale Figur").slice(0, 160),
           tone: String(customCharacter.speechStyle || "charaktertreu und natürlich").slice(0, 500),
-          lore: String(customCharacter.backstory || customCharacter.summary || "").slice(0, 2400),
-          values: [ ...(Array.isArray(customCharacter.values) ? customCharacter.values : []), ...(Array.isArray(customCharacter.traits) ? customCharacter.traits : []) ].map(x => String(x).slice(0, 100)).join(", ").slice(0, 1200)
+          lore: [customCharacter.backstory, customCharacter.summary, customCharacter.goals ? "Motivation: " + customCharacter.goals : "", customCharacter.behavior ? "Verhalten: " + customCharacter.behavior : "", customCharacter.appearance ? "Visuelles Design: " + customCharacter.appearance : ""].filter(Boolean).map(x => String(x).slice(0, 2400)).join("\\n").slice(0, 5000),
+          values: [ ...(Array.isArray(customCharacter.values) ? customCharacter.values : []), ...(Array.isArray(customCharacter.traits) ? customCharacter.traits : []), customCharacter.boundaries ? "Grenzen: " + customCharacter.boundaries : "" ].map(x => String(x).slice(0, 200)).join(", ").slice(0, 1600)
         }
       : null
   );
