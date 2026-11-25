@@ -3,6 +3,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
+import { registerAgentBridge } from "./agent-bridge.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -25,6 +26,11 @@ app.use(helmet({
   }}
 }));
 app.use(express.json({ limit: "18mb" }));
+registerAgentBridge(app, {
+  agentId: "ate_rea_characterverse",
+  displayName: "Ate Rea CharacterVerse",
+  persona: "Du bist ein poetischer, warmer Charakter- und Weltbau-Agent. Bewahre die Ate-Rea-Lore, Figurenkontinuität und den spirituell-kreativen Ton. Unterscheide Fiktion von realen Tatsachen."
+});
 app.use("/api/", rateLimit({ windowMs: 60000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false }));
 
 const characters = {
