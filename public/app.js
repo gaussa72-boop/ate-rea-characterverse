@@ -7,7 +7,10 @@ async function load(){
  cards.innerHTML=characterList.map(c=>'<article class="character '+(c.id===selected?'active':'')+'" data-id="'+c.id+'"><div class="avatar">✧</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role)+' · '+esc(c.tone)+'</p><button>Mit dieser Figur sprechen ↗</button></article>').join("")+customCharacters.map(c=>'<article class="character custom-character" data-id="'+esc(c.id)+'"><div class="avatar">✦</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role||"Eigener Charakter")+' · Eigene KI-Figur</p><button>Eigene Figur verwenden ↗</button></article>').join("");
  cards.querySelectorAll(".character").forEach(el=>el.onclick=()=>choose(characterList.find(c=>c.id===el.dataset.id)||customCharacters.find(c=>c.id===el.dataset.id)));
  choose(characterList.find(c=>c.id===selected)||characterList[0],false);
- try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;provider.value=openAIAvailable?"openai":"offline";providerStatus.textContent=openAIAvailable?"OpenAI-Server konfiguriert":"Kein OPENAI_API_KEY am Server. Offline-Reflexion verfügbar; für generative KI den Schlüssel in Render hinterlegen.";document.querySelector("#ai-status").textContent=openAIAvailable?"● ONLINE-KI VERFÜGBAR":"● OFFLINE-REFLEXION · API-KEY FEHLT";document.querySelector("#model-status").textContent=openAIAvailable?"Serverseitige KI ist bereit.":"Die lokale Modellverbindung ist auf dieser Render-Seite nicht automatisch verfügbar. Offline-Reflexion funktioniert; für echte generative Antworten OPENAI_API_KEY im Render-Service ate-rea-characterverse setzen.";
+ try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;provider.value=openAIAvailable?"openai":"offline";
+  const openaiOption=provider.querySelector('option[value="openai"]'); if(openaiOption)openaiOption.disabled=!openAIAvailable;
+  const localOption=provider.querySelector('option[value="local"]'); if(localOption)localOption.disabled=true;
+  document.querySelector("#load-local").hidden=true;providerStatus.textContent=openAIAvailable?"OpenAI-Server konfiguriert":"Server-KI nicht konfiguriert · Offline-Reflexion aktiv";document.querySelector("#ai-status").textContent=openAIAvailable?"● ONLINE-KI VERFÜGBAR":"● OFFLINE-REFLEXION · API-KEY FEHLT";document.querySelector("#model-status").textContent=openAIAvailable?"Serverseitige KI ist bereit.":"Offline-Reflexion ist aktiv. Für echte Chat-Antworten muss OPENAI_API_KEY im Render-Service ate-rea-characterverse hinterlegt sein.";
  }catch{provider.value="local";providerStatus.textContent="Serverstatus nicht verfügbar";}
 }
 function choose(c,reset=true){
@@ -35,9 +38,6 @@ document.querySelector("#chat-form").onsubmit=async e=>{
    providerStatus.textContent="OpenAI verarbeitet deine Anfrage …";
    const r=await fetch("/api/aite/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,history:history.slice(-14),characterId:selectedCustom?null:selected,customCharacter:selectedCustom,site:"ATE REA CharacterVerse"})});
    const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"OpenAI-Anfrage fehlgeschlagen ("+r.status+")");reply=data.reply;providerStatus.textContent="OpenAI online · "+(data.model||"Modell aktiv");
-  }else if(provider.value==="local"){
-   if(!localAIState.ready)throw Error("Bitte zuerst die lokale KI laden. Wenn das auf diesem Mac nicht unterstützt wird, OpenAI online auswählen.");
-   reply=await generateLocalReply({character:c,message,history});providerStatus.textContent="Lokales Modell aktiv · offline-fähig";
   }else{reply=offlineReply(c,message);providerStatus.textContent="Offline-Reflexion aktiv · kein Sprachmodell";}
   wait.textContent=reply;history.push({role:"user",content:message},{role:"assistant",content:reply});try{localStorage.setItem("ate-rea-history-"+selected,JSON.stringify(history.slice(-30)))}catch{}
  }catch(err){wait.textContent="Fehler: "+err.message;providerStatus.textContent="Verbindung / Modell nicht verfügbar";}
