@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild public/local-ai.js --bundle --format=esm --platform=browser --outfile=public/local-ai.bundle.js",
+    "build": "esbuild public/local-ai.js --bundle --format=esm --platform=browser --outfile=public/local-ai.bundle.js && esbuild public/avatar-scene.js --bundle --format=esm --platform=browser --outfile=public/avatar-scene.bundle.js",
     "postinstall": "npm run build",
     "start": "node server.js"
   },
@@ -12,7 +12,8 @@
     "@mlc-ai/web-llm": "^0.2.79",
     "express": "^4.21.2",
     "helmet": "^8.1.0",
-    "express-rate-limit": "^7.5.0"
+    "express-rate-limit": "^7.5.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
