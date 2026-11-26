@@ -23,6 +23,19 @@ async function askIonos(prompt) {
   if (!answer.trim()) throw new Error("IONOS-7 lieferte keine Textantwort.");
   return answer.trim();
 }
+async function askIonosVision(prompt, images) {
+  const response = await fetch("https://ionos-ki.onrender.com/api/vision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, images }),
+    signal: AbortSignal.timeout(60000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "IONOS Vision antwortete mit HTTP " + response.status);
+  const answer = typeof data.reply === "string" ? data.reply : "";
+  if (!answer.trim()) throw new Error("IONOS Vision lieferte keine Bildanalyse.");
+  return answer.trim();
+}
 // Render terminates TLS/proxy connections before forwarding requests to this app.
 // Trust the single platform proxy so express-rate-limit can identify client IPs safely.
 app.set("trust proxy", 1);
@@ -117,7 +130,8 @@ app.post("/api/characters/generate", async (req, res) => {
   // through the user's working IONOS-7 service. Image references are not sent.
   if (!apiKey) {
     try {
-      const raw = await askIonos(brief + "\\n\\nWICHTIG: Gib ausschließlich ein valides JSON-Objekt zurück, ohne Markdown.");
+      const jsonBrief = brief + "\\n\\nWICHTIG: Gib ausschließlich ein valides JSON-Objekt zurück, ohne Markdown.";
+      const raw = media.length ? await askIonosVision(jsonBrief, media) : await askIonos(jsonBrief);
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) throw new Error("Kein JSON-Profil empfangen.");
       const character = JSON.parse(match[0]);
@@ -127,7 +141,7 @@ app.post("/api/characters/generate", async (req, res) => {
       character.traits = Array.isArray(character.traits) ? character.traits.slice(0, 12).map(x => String(x).slice(0, 80)) : [];
       character.values = Array.isArray(character.values) ? character.values.slice(0, 12).map(x => String(x).slice(0, 80)) : [];
       character.userGenerated = true;
-      return res.json({ character, model: "IONOS-7 provider bridge", analyzedReferences: 0, note: media.length ? "Bildreferenzen wurden in diesem Fallback nicht analysiert." : "" });
+      return res.json({ character, model: media.length ? "IONOS-KI Vision bridge" : "IONOS-7 provider bridge", analyzedReferences: media.length, note: "" });
     } catch (error) {
       return res.status(502).json({ error: "Charaktererstellung über IONOS-7 fehlgeschlagen: " + String(error.message || error).slice(0, 180) });
     }
