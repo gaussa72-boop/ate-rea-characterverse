@@ -7,6 +7,22 @@ import { registerAgentBridge } from "./agent-bridge.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+// Securely reuse the already-configured IONOS-7 model service without copying its
+// provider secret into this app. The key remains only in the IONOS Render service.
+async function askIonos(prompt) {
+  const response = await fetch("https://ionos-ki.onrender.com/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: prompt, model: process.env.OPENAI_MODEL || "gpt-5.6" }),
+    signal: AbortSignal.timeout(45000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("IONOS-7 Provider antwortete mit HTTP " + response.status);
+  const answer = typeof data.response === "string" ? data.response : "";
+  if (!answer.trim()) throw new Error("IONOS-7 lieferte keine Textantwort.");
+  return answer.trim();
+}
 // Render terminates TLS/proxy connections before forwarding requests to this app.
 // Trust the single platform proxy so express-rate-limit can identify client IPs safely.
 app.set("trust proxy", 1);
@@ -59,7 +75,6 @@ app.get("/api/config", (_q, r) => r.json({
 // Images are analyzed transiently; uploaded files are not written to disk or retained by this service.
 app.post("/api/characters/generate", async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: "OPENAI_API_KEY fehlt im Render-Service. Bitte den Schlüssel unter Environment setzen." });
   const body = req.body || {};
   const fields = ["name", "role", "idea", "traits", "values", "speechStyle", "goals", "backstory", "boundaries"];
   for (const key of fields) {
@@ -96,6 +111,37 @@ app.post("/api/characters/generate", async (req, res) => {
     "Hintergrund: " + (body.backstory || "kreativ ausarbeiten"),
     "Verhaltensregeln: " + (body.boundaries || "respektvoll, transparent und charaktertreu")
   ].join("\n");
+
+  // If this app has no direct provider secret, route text-only character design
+  // through the user's working IONOS-7 service. Image references are not sent.
+  if (!apiKey) {
+    try {
+      const raw = await askIonos(brief + "\\n\\nWICHTIG: Gib ausschließlich ein valides JSON-Objekt zurück, ohne Markdown.");
+      const match = raw.match(/\\{[\\s\\S]*\\}/);
+      if (!match) throw new Error("Kein JSON-Profil empfangen.");
+      const character = JSON.parse(match[0]);
+      character.name = String(character.name || body.name).slice(0, 70);
+      character.role = String(character.role || body.role || "Eigener Charakter").slice(0, 160);
+      for (const key of ["summary","speechStyle","backstory","goals","behavior","appearance","greeting","boundaries"]) character[key] = String(character[key] || "").slice(0, 2400);
+      character.traits = Array.isArray(character.traits) ? character.traits.slice(0, 12).map(x => String(x).slice(0, 80)) : [];
+      character.values = Array.isArray(character.values) ? character.values.slice(0, 12).map(x => String(x).slice(0, 80)) : [];
+      character.userGenerated = true;
+      return res.json({ character, model: "IONOS-7 provider bridge", analyzedReferences: 0, note: media.length ? "Bildreferenzen wurden in diesem Fallback nicht analysiert." : "" });
+    } catch (error) {
+      return res.status(502).json({ error: "Charaktererstellung über IONOS-7 fehlgeschlagen: " + String(error.message || error).slice(0, 180) });
+    }
+  }
+
+  if (!apiKey) {
+    try {
+      const conversationText = safeHistory.map(m => (m.role === "assistant" ? "Ate Rea CharacterVerse: " : "Nutzer: ") + m.content).join("\\n");
+      const answer = await askIonos(system + "\\n\\n" + conversationText + "\\nNutzer: " + message.trim());
+      return res.json({ reply: answer, model: "IONOS-7 provider bridge" });
+    } catch (error) {
+      return res.status(502).json({ error: "Verbindung zum IONOS-7 KI-Dienst fehlgeschlagen: " + String(error.message || error).slice(0, 180) });
+    }
+  }
+
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -139,10 +185,6 @@ app.post("/api/characters/generate", async (req, res) => {
 // OpenAI calls stay on the server. The API key is never sent to the browser.
 app.post("/api/aite/chat", async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({ error: "OPENAI_API_KEY fehlt auf dem Server. Bitte in Render unter Environment setzen." });
-  }
-
   const { message, history = [], persona = "compass", site = "AITE", characterId = null, customCharacter = null } = req.body || {};
   if (typeof message !== "string" || !message.trim() || message.length > 6000) {
     return res.status(400).json({ error: "Bitte eine Nachricht mit maximal 6000 Zeichen senden." });
