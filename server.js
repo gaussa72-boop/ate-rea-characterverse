@@ -11,15 +11,15 @@ const app = express();
 // Securely reuse the already-configured IONOS-7 model service without copying its
 // provider secret into this app. The key remains only in the IONOS Render service.
 async function askIonos(prompt) {
-  const response = await fetch("https://ionos-ki.onrender.com/chat", {
+  const response = await fetch("https://ionos-ki.onrender.com/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: prompt, model: process.env.OPENAI_MODEL || "gpt-5.6" }),
+    body: JSON.stringify({ message: prompt, history: [], model: process.env.OPENAI_MODEL || "gpt-5.6" }),
     signal: AbortSignal.timeout(45000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error("IONOS-7 Provider antwortete mit HTTP " + response.status);
-  const answer = typeof data.response === "string" ? data.response : "";
+  const answer = typeof data.reply === "string" ? data.reply : (typeof data.response === "string" ? data.response : "");
   if (!answer.trim()) throw new Error("IONOS-7 lieferte keine Textantwort.");
   return answer.trim();
 }
@@ -117,7 +117,7 @@ app.post("/api/characters/generate", async (req, res) => {
   if (!apiKey) {
     try {
       const raw = await askIonos(brief + "\\n\\nWICHTIG: Gib ausschließlich ein valides JSON-Objekt zurück, ohne Markdown.");
-      const match = raw.match(/\\{[\\s\\S]*\\}/);
+      const match = raw.match(/\{[\s\S]*\}/);
       if (!match) throw new Error("Kein JSON-Profil empfangen.");
       const character = JSON.parse(match[0]);
       character.name = String(character.name || body.name).slice(0, 70);
