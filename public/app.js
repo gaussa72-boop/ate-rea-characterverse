@@ -7,14 +7,15 @@ async function load(){
  cards.innerHTML=characterList.map(c=>'<article class="character '+(c.id===selected?'active':'')+'" data-id="'+c.id+'"><div class="avatar">✧</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role)+' · '+esc(c.tone)+'</p><button>Mit dieser Figur sprechen ↗</button></article>').join("")+customCharacters.map(c=>'<article class="character custom-character" data-id="'+esc(c.id)+'"><div class="avatar">✦</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role||"Eigener Charakter")+' · Eigene KI-Figur</p><button>Eigene Figur verwenden ↗</button></article>').join("");
  cards.querySelectorAll(".character").forEach(el=>el.onclick=()=>choose(characterList.find(c=>c.id===el.dataset.id)||customCharacters.find(c=>c.id===el.dataset.id)));
  choose(characterList.find(c=>c.id===selected)||characterList[0],false);
- try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;provider.value=openAIAvailable?"openai":"offline";
+ try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;const serverAIAvailable=!!cfg.serverAIAvailable;provider.value=openAIAvailable?"openai":serverAIAvailable?"server":"offline";
   const openaiOption=provider.querySelector('option[value="openai"]'); if(openaiOption)openaiOption.disabled=!openAIAvailable;
+  const serverOption=provider.querySelector('option[value="server"]'); if(serverOption)serverOption.disabled=!serverAIAvailable;
   const webgpuAvailable=!!navigator.gpu;
   const localOption=provider.querySelector('option[value="local"]'); if(localOption)localOption.disabled=!webgpuAvailable;
   document.querySelector("#load-local").hidden=!webgpuAvailable;
-  providerStatus.textContent=openAIAvailable?"OpenAI-Server konfiguriert":webgpuAvailable?"OpenAI-Key fehlt · lokale Browser-KI verfügbar":"Server-KI nicht konfiguriert · Offline-Reflexion aktiv";
-  document.querySelector("#ai-status").textContent=openAIAvailable?"● ONLINE-KI VERFÜGBAR":webgpuAvailable?"● LOKALE KI VERFÜGBAR · NOCH NICHT GELADEN":"● OFFLINE-REFLEXION · API-KEY FEHLT";
-  document.querySelector("#model-status").textContent=openAIAvailable?"Serverseitige KI ist bereit.":webgpuAvailable?"Du kannst ein lokales Sprachmodell im Browser laden. Der erste Download kann mehrere GB umfassen.":"Offline-Reflexion ist aktiv. Für generative Antworten benötigst du OPENAI_API_KEY in Render oder einen Browser mit WebGPU-Unterstützung.";
+  providerStatus.textContent=openAIAvailable?"OpenAI direkt konfiguriert":serverAIAvailable?"IONOS-7 Server-KI verfügbar":webgpuAvailable?"Lokale Browser-KI verfügbar":"Offline-Reflexion aktiv";
+  document.querySelector("#ai-status").textContent=openAIAvailable?"● OPENAI ONLINE":serverAIAvailable?"● IONOS-7 ONLINE":webgpuAvailable?"● LOKALE KI VERFÜGBAR · NOCH NICHT GELADEN":"● OFFLINE-REFLEXION";
+  document.querySelector("#model-status").textContent=openAIAvailable?"OpenAI-Server-KI ist bereit.":serverAIAvailable?"IONOS-7 verarbeitet deine Nachrichten serverseitig; kein lokaler Modell-Download nötig.":webgpuAvailable?"Du kannst ein lokales Sprachmodell im Browser laden. Der erste Download kann mehrere GB umfassen.":"Offline-Reflexion ist aktiv. Für generative Antworten benötigst du eine aktive Server-KI oder WebGPU.";
  }catch{provider.value="local";providerStatus.textContent="Serverstatus nicht verfügbar";}
 }
 function choose(c,reset=true){
@@ -37,11 +38,12 @@ document.querySelector("#chat-form").onsubmit=async e=>{
  const c=selectedCustom||characterList.find(x=>x.id===selected);
  try{
   let reply;
-  if(provider.value==="openai"){
-   if(!openAIAvailable)throw Error("OpenAI ist auf diesem Render-Dienst nicht konfiguriert. OPENAI_API_KEY in Render setzen.");
+  if(provider.value==="openai"||provider.value==="server"){
+   if(provider.value==="openai"&&!openAIAvailable)throw Error("OpenAI ist auf diesem Render-Dienst nicht konfiguriert.");
+   if(provider.value==="server"&&!serverAIAvailable)throw Error("IONOS-7 Server-KI ist derzeit nicht verfügbar.");
    providerStatus.textContent="OpenAI verarbeitet deine Anfrage …";
    const r=await fetch("/api/aite/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,history:history.slice(-14),characterId:selectedCustom?null:selected,customCharacter:selectedCustom,site:"ATE REA CharacterVerse"})});
-   const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"OpenAI-Anfrage fehlgeschlagen ("+r.status+")");reply=data.reply;providerStatus.textContent="OpenAI online · "+(data.model||"Modell aktiv");
+   const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"OpenAI-Anfrage fehlgeschlagen ("+r.status+")");reply=data.reply;providerStatus.textContent=(provider.value==="server"?"IONOS-7 online · ":"OpenAI online · ")+(data.model||"Modell aktiv");
   }else if(provider.value==="local"){if(!localAIState.ready)throw Error("Bitte zuerst „Lokale KI laden“ wählen.");reply=await generateLocalReply({character:c,message,history});providerStatus.textContent="Lokales Sprachmodell · Browser-WebGPU";}else{reply=offlineReply(c,message);providerStatus.textContent="Offline-Reflexion aktiv · kein Sprachmodell";}
   wait.textContent=reply;history.push({role:"user",content:message},{role:"assistant",content:reply});try{localStorage.setItem("ate-rea-history-"+selected,JSON.stringify(history.slice(-30)))}catch{}
  }catch(err){wait.textContent="Fehler: "+err.message;providerStatus.textContent="Verbindung / Modell nicht verfügbar";}
