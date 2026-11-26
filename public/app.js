@@ -1,5 +1,5 @@
 import {initLocalAI,generateLocalReply,localAIState} from "./local-ai.bundle.js";
-let selected="ate_rea",history=[],characterList=[],openAIAvailable=false,selectedCustom=null;
+let selected="ate_rea",history=[],characterList=[],openAIAvailable=false,serverAIAvailable=false,selectedCustom=null;
 const cards=document.querySelector("#cards"),messages=document.querySelector("#messages"),provider=document.querySelector("#ai-provider"),providerStatus=document.querySelector("#provider-status"),esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function load(){
  try{const r=await fetch("/api/characters");if(!r.ok)throw Error("Charaktere konnten nicht geladen werden");characterList=await r.json();}catch(e){document.querySelector("#ai-status").textContent="● SERVERFEHLER";providerStatus.textContent=e.message;return}
@@ -7,7 +7,7 @@ async function load(){
  cards.innerHTML=characterList.map(c=>'<article class="character '+(c.id===selected?'active':'')+'" data-id="'+c.id+'"><div class="avatar">✧</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role)+' · '+esc(c.tone)+'</p><button>Mit dieser Figur sprechen ↗</button></article>').join("")+customCharacters.map(c=>'<article class="character custom-character" data-id="'+esc(c.id)+'"><div class="avatar">✦</div><h3>'+esc(c.name)+'</h3><p>'+esc(c.role||"Eigener Charakter")+' · Eigene KI-Figur</p><button>Eigene Figur verwenden ↗</button></article>').join("");
  cards.querySelectorAll(".character").forEach(el=>el.onclick=()=>choose(characterList.find(c=>c.id===el.dataset.id)||customCharacters.find(c=>c.id===el.dataset.id)));
  choose(characterList.find(c=>c.id===selected)||characterList[0],false);
- try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;const serverAIAvailable=!!cfg.serverAIAvailable;provider.value=openAIAvailable?"openai":serverAIAvailable?"server":"offline";
+ try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;serverAIAvailable=!!cfg.serverAIAvailable;provider.value=openAIAvailable?"openai":serverAIAvailable?"server":"offline";
   const openaiOption=provider.querySelector('option[value="openai"]'); if(openaiOption)openaiOption.disabled=!openAIAvailable;
   const serverOption=provider.querySelector('option[value="server"]'); if(serverOption)serverOption.disabled=!serverAIAvailable;
   const webgpuAvailable=!!navigator.gpu;
@@ -41,7 +41,7 @@ document.querySelector("#chat-form").onsubmit=async e=>{
   if(provider.value==="openai"||provider.value==="server"){
    if(provider.value==="openai"&&!openAIAvailable)throw Error("OpenAI ist auf diesem Render-Dienst nicht konfiguriert.");
    if(provider.value==="server"&&!serverAIAvailable)throw Error("IONOS-7 Server-KI ist derzeit nicht verfügbar.");
-   providerStatus.textContent="OpenAI verarbeitet deine Anfrage …";
+   providerStatus.textContent=provider.value==="server"?"IONOS-7 verarbeitet deine Anfrage …":"OpenAI verarbeitet deine Anfrage …";
    const r=await fetch("/api/aite/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,history:history.slice(-14),characterId:selectedCustom?null:selected,customCharacter:selectedCustom,site:"ATE REA CharacterVerse"})});
    const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"OpenAI-Anfrage fehlgeschlagen ("+r.status+")");reply=data.reply;providerStatus.textContent=(provider.value==="server"?"IONOS-7 online · ":"OpenAI online · ")+(data.model||"Modell aktiv");
   }else if(provider.value==="local"){if(!localAIState.ready)throw Error("Bitte zuerst „Lokale KI laden“ wählen.");reply=await generateLocalReply({character:c,message,history});providerStatus.textContent="Lokales Sprachmodell · Browser-WebGPU";}else{reply=offlineReply(c,message);providerStatus.textContent="Offline-Reflexion aktiv · kein Sprachmodell";}
