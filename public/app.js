@@ -9,8 +9,12 @@ async function load(){
  choose(characterList.find(c=>c.id===selected)||characterList[0],false);
  try{const r=await fetch("/api/config",{cache:"no-store"});const cfg=await r.json();openAIAvailable=!!cfg.openaiAvailable;provider.value=openAIAvailable?"openai":"offline";
   const openaiOption=provider.querySelector('option[value="openai"]'); if(openaiOption)openaiOption.disabled=!openAIAvailable;
-  const localOption=provider.querySelector('option[value="local"]'); if(localOption)localOption.disabled=true;
-  document.querySelector("#load-local").hidden=true;providerStatus.textContent=openAIAvailable?"OpenAI-Server konfiguriert":"Server-KI nicht konfiguriert · Offline-Reflexion aktiv";document.querySelector("#ai-status").textContent=openAIAvailable?"● ONLINE-KI VERFÜGBAR":"● OFFLINE-REFLEXION · API-KEY FEHLT";document.querySelector("#model-status").textContent=openAIAvailable?"Serverseitige KI ist bereit.":"Offline-Reflexion ist aktiv. Für echte Chat-Antworten muss OPENAI_API_KEY im Render-Service ate-rea-characterverse hinterlegt sein.";
+  const webgpuAvailable=!!navigator.gpu;
+  const localOption=provider.querySelector('option[value="local"]'); if(localOption)localOption.disabled=!webgpuAvailable;
+  document.querySelector("#load-local").hidden=!webgpuAvailable;
+  providerStatus.textContent=openAIAvailable?"OpenAI-Server konfiguriert":webgpuAvailable?"OpenAI-Key fehlt · lokale Browser-KI verfügbar":"Server-KI nicht konfiguriert · Offline-Reflexion aktiv";
+  document.querySelector("#ai-status").textContent=openAIAvailable?"● ONLINE-KI VERFÜGBAR":webgpuAvailable?"● LOKALE KI VERFÜGBAR · NOCH NICHT GELADEN":"● OFFLINE-REFLEXION · API-KEY FEHLT";
+  document.querySelector("#model-status").textContent=openAIAvailable?"Serverseitige KI ist bereit.":webgpuAvailable?"Du kannst ein lokales Sprachmodell im Browser laden. Der erste Download kann mehrere GB umfassen.":"Offline-Reflexion ist aktiv. Für generative Antworten benötigst du OPENAI_API_KEY in Render oder einen Browser mit WebGPU-Unterstützung.";
  }catch{provider.value="local";providerStatus.textContent="Serverstatus nicht verfügbar";}
 }
 function choose(c,reset=true){
@@ -38,7 +42,7 @@ document.querySelector("#chat-form").onsubmit=async e=>{
    providerStatus.textContent="OpenAI verarbeitet deine Anfrage …";
    const r=await fetch("/api/aite/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,history:history.slice(-14),characterId:selectedCustom?null:selected,customCharacter:selectedCustom,site:"ATE REA CharacterVerse"})});
    const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"OpenAI-Anfrage fehlgeschlagen ("+r.status+")");reply=data.reply;providerStatus.textContent="OpenAI online · "+(data.model||"Modell aktiv");
-  }else{reply=offlineReply(c,message);providerStatus.textContent="Offline-Reflexion aktiv · kein Sprachmodell";}
+  }else if(provider.value==="local"){if(!localAIState.ready)throw Error("Bitte zuerst „Lokale KI laden“ wählen.");reply=await generateLocalReply({character:c,message,history});providerStatus.textContent="Lokales Sprachmodell · Browser-WebGPU";}else{reply=offlineReply(c,message);providerStatus.textContent="Offline-Reflexion aktiv · kein Sprachmodell";}
   wait.textContent=reply;history.push({role:"user",content:message},{role:"assistant",content:reply});try{localStorage.setItem("ate-rea-history-"+selected,JSON.stringify(history.slice(-30)))}catch{}
  }catch(err){wait.textContent="Fehler: "+err.message;providerStatus.textContent="Verbindung / Modell nicht verfügbar";}
  messages.scrollTop=messages.scrollHeight;
