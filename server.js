@@ -66,8 +66,9 @@ app.get("/api/health", (_q, r) => r.json({
 }));
 app.get("/api/characters", (_q, r) => r.json(Object.entries(characters).map(([id, c]) => ({ id, ...c }))));
 app.get("/api/config", (_q, r) => r.json({
-  provider: "browser-local",
+  provider: process.env.OPENAI_API_KEY ? "openai" : "ionos-7-server-bridge",
   openaiAvailable: Boolean(process.env.OPENAI_API_KEY),
+  serverAIAvailable: true,
   model: process.env.OPENAI_MODEL || "gpt-4o-mini"
 }));
 
